@@ -1,6 +1,7 @@
 extern crate libftdi1_sys as ftdic;
 use std::os::raw;
 use std::fmt;
+use std::ffi::CStr;
 use std::error;
 use std::result;
 
@@ -9,15 +10,15 @@ pub struct Context {
     context : *mut ftdic::ftdi_context,
 }
 
-type Result<T> = result::Result<T, Error>;
+type Result<'a, T> = result::Result<T, Error<'a>>;
 
 #[derive(Debug)]
-pub enum Error {
-    LibFtdiError(i32), /* libftdi-specific failure. */
+pub enum Error<'a> {
+    LibFtdiError(&'a str), /* libftdi-specific failure. */
     MallocFailure,
 }
 
-impl fmt::Display for Error {
+impl<'a> fmt::Display for Error<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::LibFtdiError(x) => {
@@ -30,21 +31,26 @@ impl fmt::Display for Error {
     }
 }
 
-impl error::Error for Error {
-
-}
-
 
 impl Context {
-    fn check_ftdi_error(rc : raw::c_int) -> Result<()> {
+    fn check_ftdi_error<'a>(&'a self, rc : raw::c_int) -> Result<'a, ()> {
         if rc < 0 {
-            Err(Error::LibFtdiError(rc as i32))
+            // From looking at libftdi library, the error string is valid as
+            // long as the ftdi context is alive. Each error string is a null-terminated
+            // string literal.
+            let slice = unsafe {
+                let err_raw = ftdic::ftdi_get_error_string(self.context);
+                CStr::from_ptr(err_raw)
+            };
+
+            // If UTF8 validation fails, no point in continuing.
+            Err(Error::LibFtdiError(slice.to_str().unwrap()))
         } else {
             Ok(())
         }
     }
 
-    pub fn new() -> Result<Context> {
+    pub fn new<'a>() -> Result<'a, Context> {
         let ctx = unsafe { ftdic::ftdi_new() };
 
         if ctx.is_null() {
@@ -57,20 +63,20 @@ impl Context {
     }
 
     // Combine with new()?
-    pub fn open(&mut self, vid : u16, pid : u16) -> Result<()> {
+    pub fn open<'a>(&'a mut self, vid : u16, pid : u16) -> Result<'a, ()> {
         let rc = unsafe {
             ftdic::ftdi_usb_open(self.context, vid as raw::c_int, pid as raw::c_int)
         };
 
-        Context::check_ftdi_error(rc)
+        self.check_ftdi_error(rc)
     }
 
-    pub fn set_baudrate(&self, baudrate : u32) -> Result<()> {
+    pub fn set_baudrate<'a>(&'a self, baudrate : u32) -> Result<'a, ()> {
         let rc = unsafe {
             ftdic::ftdi_set_baudrate(self.context, baudrate as raw::c_int)
         };
 
-        Context::check_ftdi_error(rc)
+        self.check_ftdi_error(rc)
     }
 
     //pub fn read_pins(&self)
