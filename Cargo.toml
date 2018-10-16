@@ -1,0 +1,7 @@
+[package]
+name = "safe-ftdi"
+version = "0.1.0"
+authors = ["William D. Jones <thor0505@comcast.net>"]
+
+[dependencies]
+libftdi1-sys = "0.1.0"
