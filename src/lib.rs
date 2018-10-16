@@ -14,15 +14,20 @@ type Result<'a, T> = result::Result<T, Error<'a>>;
 
 #[derive(Debug)]
 pub enum Error<'a> {
-    LibFtdiError(&'a str), /* libftdi-specific failure. */
+    LibFtdi(LibFtdiError<'a>),
     MallocFailure,
+}
+
+#[derive(Debug)]
+pub struct LibFtdiError<'a> {
+    err_str : &'a str,
 }
 
 impl<'a> fmt::Display for Error<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::LibFtdiError(x) => {
-                write!(f, "libftdi error: {}", x)
+            Error::LibFtdi(_) => {
+                write!(f, "libftdi-internal error")
             },
             Error::MallocFailure => {
                 write!(f, "malloc() failure")
@@ -30,6 +35,28 @@ impl<'a> fmt::Display for Error<'a> {
         }
     }
 }
+
+impl<'a> fmt::Display for LibFtdiError<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.err_str)
+    }
+}
+
+impl<'a> error::Error for Error<'a> {
+    fn cause(&self) -> Option<&error::Error> {
+        match *self {
+            Error::LibFtdi(ref ftdi_err) => {
+                Some(ftdi_err)
+            },
+            Error::MallocFailure => {
+                None
+            }
+        }
+    }
+}
+
+impl<'a> error::Error for LibFtdiError<'a> {}
+
 
 
 impl Context {
@@ -44,7 +71,9 @@ impl Context {
             };
 
             // If UTF8 validation fails, no point in continuing.
-            Err(Error::LibFtdiError(slice.to_str().unwrap()))
+            Err(Error::LibFtdi(LibFtdiError {
+                    err_str : slice.to_str().unwrap(),
+            }))
         } else {
             Ok(())
         }
