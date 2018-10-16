@@ -1,5 +1,7 @@
 extern crate libftdi1_sys as ftdic;
 use std::os::raw;
+use std::fmt;
+use std::error;
 use std::result;
 
 
@@ -13,6 +15,23 @@ type Result<T> = result::Result<T, Error>;
 pub enum Error {
     LibFtdiError(i32), /* libftdi-specific failure. */
     MallocFailure,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Error::LibFtdiError(x) => {
+                write!(f, "libftdi error: {}", x)
+            },
+            Error::MallocFailure => {
+                write!(f, "malloc() failure")
+            }
+        }
+    }
+}
+
+impl error::Error for Error {
+
 }
 
 
