@@ -11,7 +11,7 @@ pub struct Context {
     context : *mut ftdic::ftdi_context,
 }
 
-type Result<'a, T> = result::Result<T, error::Error<'a>>;
+pub type Result<'a, T> = result::Result<T, error::Error<'a>>;
 
 impl Context {
     fn check_ftdi_error<'a, T>(&'a self, rc : raw::c_int, ok_val : T) -> Result<'a, T> {
@@ -93,11 +93,6 @@ impl Context {
         self.check_ftdi_error(rc, rc as u32)
     }
 }
-
-/* impl Write for Context {
-
-} */
-
 
 
 impl Drop for Context {
