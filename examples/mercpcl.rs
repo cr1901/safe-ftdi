@@ -1,3 +1,5 @@
+#![feature(nll)]
+
 extern crate argparse;
 extern crate safe_ftdi as ftdi;
 
