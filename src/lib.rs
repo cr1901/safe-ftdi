@@ -3,6 +3,9 @@ use std::os::raw;
 use std::ffi::CStr;
 use std::result;
 
+pub mod mpsse;
+use mpsse::{MpsseMode};
+
 pub mod error;
 use error::*;
 
@@ -55,6 +58,14 @@ impl Context {
     pub fn set_baudrate<'a>(&'a self, baudrate : u32) -> Result<'a, ()> {
         let rc = unsafe {
             ftdic::ftdi_set_baudrate(self.context, baudrate as raw::c_int)
+        };
+
+        self.check_ftdi_error(rc, ())
+    }
+
+    pub fn set_bitmode<'a>(&'a self, bitmask : u8, mode : MpsseMode) -> Result<'a, ()> {
+        let rc = unsafe {
+            ftdic::ftdi_set_bitmode(self.context, bitmask as raw::c_uchar, mode as raw::c_uchar)
         };
 
         self.check_ftdi_error(rc, ())
