@@ -10,6 +10,7 @@ extern crate bitflags;
 use std::fs::{File};
 use std::result;
 use std::fmt;
+use std::io::{Read, Error};
 use ftdi::mpsse::MpsseMode;
 use argparse::{ArgumentParser, Store};
 use bitreader::BitReader;
@@ -209,6 +210,28 @@ impl Mercury {
         Ok(LittleEndian::read_u32(&id_arr))
     }
 
+    fn flash_write(&mut self, buf : &[u8; 264], page_addr : u32) -> MercuryResult<()> {
+        let mut write_flash_buffer_cmd = [0x84, 0x00, 0x00, 0x00];
+        let mut buf_to_flash_cmd = [0x88, 0x00, 0x00, 0x00];
+
+        let paddr_hi = (((page_addr & 0x3FF) >> 7) & 0x07) as u8;
+        let paddr_lo = (((page_addr & 0x3FF) << 1) & 0xFE) as u8;
+
+        buf_to_flash_cmd[1] = paddr_hi;
+        buf_to_flash_cmd[2] = paddr_lo;
+
+        self.spi_out(&write_flash_buffer_cmd, DeviceSelect::FLASH)?;
+        self.spi_out(buf, DeviceSelect::FLASH)?;
+        self.spi_sel(DeviceSelect::IDLE)?; // Stop write command.
+        self.spi_out(&buf_to_flash_cmd, DeviceSelect::FLASH)?;
+        self.spi_sel(DeviceSelect::IDLE)?; // Command doesn't start until CS=>high.
+
+        self.flash_poll(300000)?;
+
+        println!("Write page {}", page_addr);
+        Ok(())
+    }
+
 
     fn flash_erase(&mut self) -> MercuryResult<()> {
         let erase_sector_0a_cmd = [0x7C, 0x00, 0x00, 0x00];
@@ -237,7 +260,7 @@ impl Mercury {
         let status_read : u8 = 0xD7;
         let mut status_code : u8 = 0;
 
-        for a in 0..timeout {
+        for _a in 0..timeout {
             self.spi_out(std::slice::from_ref(&status_read), DeviceSelect::FLASH)?;
             self.spi_in(std::slice::from_mut(&mut status_code), DeviceSelect::FLASH)?;
             self.spi_sel(DeviceSelect::IDLE)?;
@@ -251,18 +274,20 @@ impl Mercury {
     }
 }
 
+
 fn main() {
     let mut parser = ArgumentParser::new();
     let mut bitstream_file = String::new();
 
     parser.refer(&mut bitstream_file)
-          .add_argument("bitstream_file", Store, "Path to bitstream file");
+          .add_argument("bitstream_file", Store, "Path to bitstream file")
+          .required();
     parser.parse_args_or_exit();
 
-    // let bfile = match File::open(&bitstream_file) {
-    //     Ok(x) => x,
-    //     Err(_) => { println!("Error: File '{}' not found", bitstream_file); return; },
-    // };
+    let mut bfile = match File::open(&bitstream_file) {
+        Ok(x) => x,
+        Err(_) => { println!("Error: File '{}' not found", bitstream_file); return; },
+    };
 
 
     let mut merc = Mercury::new();
@@ -273,6 +298,43 @@ fn main() {
     merc.program_mode(false).unwrap();
 
     merc.program_mode(true).unwrap();
+    let mut page_buf : [u8; 264] = [0; 264];
+
+    merc.program_mode(true).unwrap();
     merc.flash_erase().unwrap();
     merc.program_mode(false).unwrap();
+
+    let mut last_page_written : u16 = 0;
+    let mut last_page_size : u16 = 0;
+    for page_num in 0..8192u16 {
+        match bfile.read(&mut page_buf) {
+            Ok(n) => {
+                if n < page_buf.len() {
+                    // Check for EOF condition.
+                    // last_page_size = n as u16;
+                    break;
+                } else {
+                    merc.flash_write(&page_buf, page_num as u32).unwrap();
+                    last_page_written = page_num;
+                }
+            },
+            Err(_) => { println!("Unexpected I/O Error."); return; }
+        }
+    }
+
+    match bfile.read(&mut page_buf) {
+        Ok(n) => {
+            // If this was actually end of file, everything's fine.
+            if n == 0 {
+                // TODO: Zero-pad page_buf by 264 - last_page_size
+                merc.flash_write(&page_buf, (last_page_written + 1) as u32).unwrap();
+            } else {
+                println!("Expected End of File- file is too large to write.");
+                return;
+            }
+        },
+        Err(_) => { println!("Unexpected I/O Error."); return; }
+    }
+
+
 }
