@@ -36,7 +36,7 @@ mod mercury {
         Timeout
     }
 
-    type MercuryResult<'a, T> = result::Result<T, MercuryError<'a>>;
+    pub type MercuryResult<'a, T> = result::Result<T, MercuryError<'a>>;
 
     impl<'a> fmt::Display for MercuryError<'a> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -108,9 +108,6 @@ mod mercury {
             Ok(())
         }
 
-    //0x251F
-    //0010010100011111
-
         pub fn program_mode(&mut self, enable : bool) -> ftdi::Result<()> {
             if enable {
                 self.context.set_bitmode(Pins::FT245_DIR_PROG.bits, MpsseMode::BITMODE_BITBANG)?;
@@ -158,7 +155,6 @@ mod mercury {
         pub fn spi_in(&mut self, bytes : &mut [u8], sel : DeviceSelect) -> ftdi::Result<u32> {
             let mut cnt : u32 = 0;
 
-            //println!("Hello!");
             for b in bytes.iter_mut() {
                 let mut curr_byte = 0;
                 for i in (0..8).rev() {
@@ -168,10 +164,8 @@ mod mercury {
 
                     pin_vals = self.context.read_pins()?;
 
-                    //println!("{0:2X}", pin_vals);
                     if (Pins::MISO.bits & pin_vals) != 0 {
                         curr_byte |= 1 << i;
-                        //println!("{}", curr_byte);
                     }
 
                     self.context.write_data(slice::from_ref(&clk_hi))?;
@@ -190,7 +184,6 @@ mod mercury {
 
             Ok(cnt)
         }
-
 
         pub fn flash_id(&mut self) -> ftdi::Result<u32> {
             let id_cmd = 0x9F;
@@ -235,10 +228,8 @@ mod mercury {
 
             self.flash_poll(300000)?;
 
-            println!("Write page {}", page_addr);
             Ok(())
         }
-
 
         pub fn flash_erase(&mut self) -> MercuryResult<()> {
             let erase_sector_0a_cmd = [0x7C, 0x00, 0x00, 0x00];
@@ -282,8 +273,8 @@ mod mercury {
     }
 }
 
-use mercury::*;
 
+use mercury::*;
 
 fn main() {
     let mut parser = ArgumentParser::new();
@@ -299,22 +290,17 @@ fn main() {
         Err(_) => { println!("Error: File '{}' not found", bitstream_file); return; },
     };
 
-
     let mut merc = Mercury::new();
+
     merc.open().unwrap();
 
     merc.program_mode(true).unwrap();
+
     println!("Flash ID is: {0:08X}", merc.flash_id().unwrap());
-    merc.program_mode(false).unwrap();
 
-    merc.program_mode(true).unwrap();
-    let mut page_buf : [u8; 264] = [0; 264];
-
-    merc.program_mode(true).unwrap();
     merc.flash_erase().unwrap();
-    merc.program_mode(false).unwrap();
 
-    merc.program_mode(true).unwrap();
+    let mut page_buf : [u8; 264] = [0; 264];
     let mut last_page_written : u16 = 0;
     let mut _last_page_size : u16 = 0;
     for page_num in 0..8192u16 {
@@ -329,7 +315,10 @@ fn main() {
                     last_page_written = page_num;
                 }
             },
-            Err(_) => { println!("Unexpected I/O Error."); return; }
+            Err(_) => {
+                println!("Unexpected I/O Error.");
+                std::process::exit(-1);
+            }
         }
     }
 
@@ -341,10 +330,13 @@ fn main() {
                 merc.flash_write(&page_buf, (last_page_written + 1) as u32).unwrap();
             } else {
                 println!("Expected End of File- file is too large to write.");
-                return;
+                std::process::exit(-2);
             }
         },
-        Err(_) => { println!("Unexpected I/O Error."); return; }
+        Err(_) => {
+            println!("Unexpected I/O Error.");
+            std::process::exit(-3);
+        }
     }
     merc.program_mode(false).unwrap();
 }
