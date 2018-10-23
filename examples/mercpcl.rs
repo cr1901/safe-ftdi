@@ -8,6 +8,8 @@ extern crate byteorder;
 extern crate bitflags;
 
 use std::fs::{File};
+use std::result;
+use std::fmt;
 use ftdi::mpsse::MpsseMode;
 use argparse::{ArgumentParser, Store};
 use bitreader::BitReader;
@@ -21,6 +23,45 @@ struct Mercury {
     context : ftdi::Context,
 }
 
+#[derive(Debug)]
+enum MercuryError<'a> {
+    SafeFtdi(ftdi::error::Error<'a>),
+    Timeout
+}
+
+type MercuryResult<'a, T> = result::Result<T, MercuryError<'a>>;
+
+impl<'a> fmt::Display for MercuryError<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+             MercuryError::SafeFtdi(_) => {
+                write!(f, "safe-ftdi error")
+            },
+            MercuryError::Timeout => {
+                write!(f, "timeout waiting for flash")
+            }
+        }
+    }
+}
+
+impl<'a> std::error::Error for MercuryError<'a> {
+    fn cause(&self) -> Option<&std::error::Error> {
+        match *self {
+            MercuryError::SafeFtdi(ref ftdi_err) => {
+                Some(ftdi_err)
+            },
+            MercuryError::Timeout => {
+                None
+            }
+        }
+    }
+}
+
+impl<'a> From<ftdi::error::Error<'a>> for MercuryError<'a> {
+    fn from(error: ftdi::error::Error<'a>) -> Self {
+        MercuryError::SafeFtdi(error)
+    }
+}
 
 // A "1" means "treat pin as output".
 bitflags! {
@@ -79,10 +120,10 @@ impl Mercury {
     // If deslect should happen after calling this function, it needs to be done manually!
     // Flash expects CS to stay asserted between data out and data in (PC's point-of-view).
     fn spi_out(&mut self, bytes : &[u8], sel : DeviceSelect) -> ftdi::Result<u32> {
-        let mut spi_word : [u8; 17] = [0; 17];
         let mut cnt : u32 = 0;
 
         for b in bytes {
+            let mut spi_word : [u8; 17] = [0; 17];
             let mut bitread = BitReader::new(std::slice::from_ref(&b));
             for i in (0..16).step_by(2) {
                 let curr_bit = if bitread.read_bool().unwrap() {
@@ -95,14 +136,14 @@ impl Mercury {
                 spi_word[i + 1] = curr_bit | Pins::SCLK.bits | sel.bits;
             }
 
+            spi_word[16] = sel.bits;
+
+            // FIXME: Should "not all data was written" be considered an error?
+            self.context.write_data(&spi_word)?;
             cnt += 1;
         }
 
-        spi_word[16] = sel.bits;
-        println!("{:X?}", spi_word);
-
-        self.context.write_data(&spi_word)?;
-        Ok(cnt + 1)
+        Ok(cnt)
     }
 
     // Expects that SCLK is low when entering this function (type 0 only).
@@ -119,10 +160,10 @@ impl Mercury {
 
                 pin_vals = self.context.read_pins()?;
 
-                println!("{0:2X}", pin_vals);
+                //println!("{0:2X}", pin_vals);
                 if (Pins::MISO.bits & pin_vals) != 0 {
                     curr_byte |= 1 << i;
-                    println!("{}", curr_byte);
+                    //println!("{}", curr_byte);
                 }
 
                 self.context.write_data(std::slice::from_ref(&clk_hi))?;
@@ -163,8 +204,50 @@ impl Mercury {
             }
         };
 
+        //self.spi_out
         self.spi_sel(DeviceSelect::IDLE)?;
         Ok(LittleEndian::read_u32(&id_arr))
+    }
+
+
+    fn flash_erase(&mut self) -> MercuryResult<()> {
+        let erase_sector_0a_cmd = [0x7C, 0x00, 0x00, 0x00];
+        let erase_sector_0b_cmd = [0x7C, 0x00, 0x10, 0x00];
+        let mut erase_sector_other_cmd = [0x7C, 0x00, 0x00, 0x00];
+
+        self.do_erase_cmd(&erase_sector_0a_cmd, 300000)?;
+        self.do_erase_cmd(&erase_sector_0b_cmd, 300000)?;
+
+        for i in 0..16 {
+            erase_sector_other_cmd[1] = i << 1; // Sectors begin at PA8, or Bit 17.
+            self.do_erase_cmd(&erase_sector_other_cmd, 300000)?;
+        }
+
+        Ok(())
+    }
+
+    fn do_erase_cmd(&mut self, cmd : &[u8; 4], timeout : u32) -> MercuryResult<()> {
+        self.spi_out(cmd, DeviceSelect::FLASH)?;
+        self.spi_sel(DeviceSelect::IDLE)?;
+        self.flash_poll(timeout)?;
+        Ok(())
+    }
+
+    fn flash_poll(&mut self, timeout : u32) -> MercuryResult<()> {
+        let status_read : u8 = 0xD7;
+        let mut status_code : u8 = 0;
+
+        for a in 0..timeout {
+            self.spi_out(std::slice::from_ref(&status_read), DeviceSelect::FLASH)?;
+            self.spi_in(std::slice::from_mut(&mut status_code), DeviceSelect::FLASH)?;
+            self.spi_sel(DeviceSelect::IDLE)?;
+
+            if (status_code & 0x80) != 0 {
+                return Ok(());
+            }
+        }
+
+        Err(MercuryError::Timeout)
     }
 }
 
@@ -184,7 +267,12 @@ fn main() {
 
     let mut merc = Mercury::new();
     merc.open().unwrap();
+
     merc.program_mode(true).unwrap();
-    println!("{0:08X}", merc.flash_id().unwrap());
+    println!("Flash ID is: {0:08X}", merc.flash_id().unwrap());
+    merc.program_mode(false).unwrap();
+
+    merc.program_mode(true).unwrap();
+    merc.flash_erase().unwrap();
     merc.program_mode(false).unwrap();
 }
