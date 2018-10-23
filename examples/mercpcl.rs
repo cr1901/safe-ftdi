@@ -304,6 +304,7 @@ fn main() {
     merc.flash_erase().unwrap();
     merc.program_mode(false).unwrap();
 
+    merc.program_mode(true).unwrap();
     let mut last_page_written : u16 = 0;
     let mut last_page_size : u16 = 0;
     for page_num in 0..8192u16 {
@@ -335,6 +336,5 @@ fn main() {
         },
         Err(_) => { println!("Unexpected I/O Error."); return; }
     }
-
-
+    merc.program_mode(false).unwrap();
 }
