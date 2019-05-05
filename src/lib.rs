@@ -8,16 +8,18 @@ use mpsse::{MpsseMode};
 
 pub mod error;
 use error::*;
+use std::marker::PhantomData;
 
 
-pub struct Context {
+pub struct Context<'a> {
     context : *mut ftdic::ftdi_context,
+    _dummy: PhantomData<&'a mut ftdic::ftdi_context>
 }
 
 pub type Result<'a, T> = result::Result<T, error::Error<'a>>;
 
-impl Context {
-    fn check_ftdi_error<'a, T>(&'a self, rc : raw::c_int, ok_val : T) -> Result<'a, T> {
+impl<'a> Context<'a> {
+    fn check_ftdi_error<T>(&self, rc : raw::c_int, ok_val : T) -> Result<T> {
         if rc < 0 {
             // From looking at libftdi library, the error string is valid as
             // long as the ftdi context is alive. Each error string is a null-terminated
@@ -34,20 +36,21 @@ impl Context {
         }
     }
 
-    pub fn new<'a>() -> Result<'a, Context> {
+    pub fn new() -> Result<'a, Context<'a>> {
         let ctx = unsafe { ftdic::ftdi_new() };
 
         if ctx.is_null() {
             Err(Error::MallocFailure)
         } else {
             Ok(Context {
-                context : ctx
+                context : ctx,
+                _dummy : PhantomData
             })
         }
     }
 
     // Combine with new()?
-    pub fn open<'a>(&'a mut self, vid : u16, pid : u16) -> Result<'a, ()> {
+    pub fn open(&mut self, vid : u16, pid : u16) -> Result<()> {
         let rc = unsafe {
             ftdic::ftdi_usb_open(self.context, vid as raw::c_int, pid as raw::c_int)
         };
@@ -55,7 +58,7 @@ impl Context {
         self.check_ftdi_error(rc, ())
     }
 
-    pub fn set_baudrate<'a>(&'a self, baudrate : u32) -> Result<'a, ()> {
+    pub fn set_baudrate(&self, baudrate : u32) -> Result<()> {
         let rc = unsafe {
             ftdic::ftdi_set_baudrate(self.context, baudrate as raw::c_int)
         };
@@ -63,7 +66,7 @@ impl Context {
         self.check_ftdi_error(rc, ())
     }
 
-    pub fn set_bitmode<'a>(&'a self, bitmask : u8, mode : MpsseMode) -> Result<'a, ()> {
+    pub fn set_bitmode(&self, bitmask : u8, mode : MpsseMode) -> Result<()> {
         let rc = unsafe {
             ftdic::ftdi_set_bitmode(self.context, bitmask as raw::c_uchar, mode as raw::c_uchar)
         };
@@ -71,7 +74,7 @@ impl Context {
         self.check_ftdi_error(rc, ())
     }
 
-    pub fn read_pins<'a>(&'a self) -> Result<'a, u8> {
+    pub fn read_pins(&self) -> Result<u8> {
         let mut pins : u8 = 0;
         let pins_ptr = std::slice::from_mut(&mut pins).as_mut_ptr();
 
@@ -82,7 +85,7 @@ impl Context {
         self.check_ftdi_error(rc, pins)
     }
 
-    pub fn read_data<'a>(&'a self, data : &mut [u8]) -> Result<'a, u32> {
+    pub fn read_data(&self, data : &mut [u8]) -> Result<u32> {
         let raw_ptr = data.as_mut_ptr();
         let raw_len = data.len() as i32;
 
@@ -93,7 +96,7 @@ impl Context {
         self.check_ftdi_error(rc, rc as u32)
     }
 
-    pub fn write_data<'a>(&'a self, data : &[u8]) -> Result<'a, u32> {
+    pub fn write_data<'b, 'c>(&'b self, data : &'c [u8]) -> Result<'b, u32> {
         let raw_ptr = data.as_ptr();
         let raw_len = data.len() as i32;
 
@@ -106,7 +109,7 @@ impl Context {
 }
 
 
-impl Drop for Context {
+impl<'a> Drop for Context<'a> {
     fn drop(&mut self) {
         unsafe { ftdic::ftdi_free(self.context) }
     }

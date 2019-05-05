@@ -26,8 +26,8 @@ mod mercury {
     use bitreader::BitReader;
     use ftdi::mpsse::MpsseMode;
 
-    pub struct Mercury {
-        context : ftdi::Context,
+    pub struct Mercury<'a> {
+        context : ftdi::Context<'a>,
     }
 
     #[derive(Debug)]
@@ -95,8 +95,8 @@ mod mercury {
     }
 
 
-    impl Mercury {
-        pub fn new() -> Mercury {
+    impl<'a> Mercury<'a> {
+        pub fn new() -> Mercury<'a> {
             Mercury {
                 context : ftdi::Context::new().unwrap()
             }
