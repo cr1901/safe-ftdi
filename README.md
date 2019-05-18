@@ -25,12 +25,9 @@ transitively `safe-ftdi` requires it as well. I have tested the bindings
 on Windows using the [MSYS2](https://www.msys2.org) environment, and
 the GNU ABI version of `rustc`.
 
-Although the library in principle compiles on stable Rust 1.26 or greater,
-the example provided requires non-lexical lifetimes and the
-[Polonius borrow checker](https://github.com/rust-lang-nursery/polonius)
-to use the `safe-ftdi` API ergonomically (i.e. using `?` when the `Err` variant
-of a `Result` as an explicit lifetime parameter). Therefore, assume the library
-is nightly-only for now.
+The library in principle compiles on stable Rust 1.26 or greater,
+which is when the `?` operator was introduced. Older nightly compilers
+should be able to compile `safe-ftdi` as well.
 
 ## License
 
