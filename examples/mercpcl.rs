@@ -1,5 +1,3 @@
-#![feature(nll)]
-
 extern crate argparse;
 extern crate safe_ftdi as ftdi;
 extern crate bitreader;
@@ -95,7 +93,7 @@ mod mercury {
     }
 
 
-    impl<'a> Mercury<'a> {
+    impl<'b, 'a: 'b> Mercury<'a> {
         pub fn new() -> Mercury<'a> {
             Mercury {
                 context : ftdi::Context::new().unwrap()
@@ -117,14 +115,14 @@ mod mercury {
             Ok(())
         }
 
-        pub fn spi_sel(&mut self, sel : DeviceSelect) -> ftdi::Result<()> {
+        pub fn spi_sel(&mut self, sel : DeviceSelect) -> ftdi::Result<'b, ()> {
             self.context.write_data(slice::from_ref(&sel.bits))?;
             Ok(())
         }
 
         // If deslect should happen after calling this function, it needs to be done manually!
         // Flash expects CS to stay asserted between data out and data in (PC's point-of-view).
-        pub fn spi_out(&mut self, bytes : &[u8], sel : DeviceSelect) -> ftdi::Result<u32> {
+        pub fn spi_out(&mut self, bytes : &[u8], sel : DeviceSelect) -> ftdi::Result<'b, u32> {
             let mut cnt : u32 = 0;
 
             for b in bytes {
@@ -152,7 +150,7 @@ mod mercury {
         }
 
         // Expects that SCLK is low when entering this function (type 0 only).
-        pub fn spi_in(&mut self, bytes : &mut [u8], sel : DeviceSelect) -> ftdi::Result<u32> {
+        pub fn spi_in(&mut self, bytes : &mut [u8], sel : DeviceSelect) -> ftdi::Result<'b, u32> {
             let mut cnt : u32 = 0;
 
             for b in bytes.iter_mut() {
@@ -247,14 +245,14 @@ mod mercury {
             Ok(())
         }
 
-        fn do_erase_cmd(&mut self, cmd : &[u8; 4], timeout : u32) -> MercuryResult<()> {
+        fn do_erase_cmd(&mut self, cmd : &[u8; 4], timeout : u32) -> MercuryResult<'b, ()> {
             self.spi_out(cmd, DeviceSelect::FLASH)?;
             self.spi_sel(DeviceSelect::IDLE)?;
             self.flash_poll(timeout)?;
             Ok(())
         }
 
-        fn flash_poll(&mut self, timeout : u32) -> MercuryResult<()> {
+        fn flash_poll(&mut self, timeout : u32) -> MercuryResult<'b, ()> {
             let status_read : u8 = 0xD7;
             let mut status_code : u8 = 0;
 
@@ -277,13 +275,16 @@ mod mercury {
 use mercury::*;
 
 fn main() {
-    let mut parser = ArgumentParser::new();
     let mut bitstream_file = String::new();
 
-    parser.refer(&mut bitstream_file)
-          .add_argument("bitstream_file", Store, "Path to bitstream file")
-          .required();
-    parser.parse_args_or_exit();
+    {
+        let mut parser = ArgumentParser::new();
+
+        parser.refer(&mut bitstream_file)
+              .add_argument("bitstream_file", Store, "Path to bitstream file")
+              .required();
+        parser.parse_args_or_exit();
+    } // drop parser here - we're done with it and it borrows bitstream_file
 
     let mut bfile = match File::open(&bitstream_file) {
         Ok(x) => x,

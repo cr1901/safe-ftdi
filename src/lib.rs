@@ -18,8 +18,8 @@ pub struct Context<'a> {
 
 pub type Result<'a, T> = result::Result<T, error::Error<'a>>;
 
-impl<'a> Context<'a> {
-    fn check_ftdi_error<T>(&self, rc : raw::c_int, ok_val : T) -> Result<T> {
+impl<'b, 'a: 'b> Context<'a> {
+    fn check_ftdi_error<T>(&self, rc : raw::c_int, ok_val : T) -> Result<'b, T> {
         if rc < 0 {
             // From looking at libftdi library, the error string is valid as
             // long as the ftdi context is alive. Each error string is a null-terminated
@@ -50,7 +50,7 @@ impl<'a> Context<'a> {
     }
 
     // Combine with new()?
-    pub fn open(&mut self, vid : u16, pid : u16) -> Result<()> {
+    pub fn open(&mut self, vid : u16, pid : u16) -> Result<'b, ()> {
         let rc = unsafe {
             ftdic::ftdi_usb_open(self.context, vid as raw::c_int, pid as raw::c_int)
         };
@@ -74,7 +74,7 @@ impl<'a> Context<'a> {
         self.check_ftdi_error(rc, ())
     }
 
-    pub fn read_pins(&self) -> Result<u8> {
+    pub fn read_pins(&self) -> Result<'b, u8> {
         let mut pins : u8 = 0;
         let pins_ptr = std::slice::from_mut(&mut pins).as_mut_ptr();
 
@@ -96,7 +96,7 @@ impl<'a> Context<'a> {
         self.check_ftdi_error(rc, rc as u32)
     }
 
-    pub fn write_data<'b, 'c>(&'b self, data : &'c [u8]) -> Result<'b, u32> {
+    pub fn write_data(&self, data : &[u8]) -> Result<'b, u32> {
         let raw_ptr = data.as_ptr();
         let raw_len = data.len() as i32;
 
