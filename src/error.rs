@@ -2,18 +2,18 @@ use std;
 use std::fmt;
 
 #[derive(Debug)]
-pub enum Error<'a> {
-    LibFtdi(LibFtdiError<'a>),
+pub enum Error {
+    LibFtdi(LibFtdiError),
     MallocFailure,
 }
 
 #[derive(Debug)]
-pub struct LibFtdiError<'a> {
-    err_str : &'a str,
+pub struct LibFtdiError {
+    err_str : &'static str,
 }
 
-impl<'a> LibFtdiError<'a> {
-    pub fn new(err_str : &'a str) -> LibFtdiError<'a> {
+impl LibFtdiError {
+    pub fn new(err_str : &'static str) -> LibFtdiError {
         LibFtdiError {
                 err_str : err_str,
         }
@@ -21,7 +21,7 @@ impl<'a> LibFtdiError<'a> {
 }
 
 
-impl<'a> fmt::Display for Error<'a> {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::LibFtdi(_) => {
@@ -34,13 +34,13 @@ impl<'a> fmt::Display for Error<'a> {
     }
 }
 
-impl<'a> fmt::Display for LibFtdiError<'a> {
+impl fmt::Display for LibFtdiError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.err_str)
     }
 }
 
-impl<'a> std::error::Error for Error<'a> {
+impl std::error::Error for Error {
     fn cause(&self) -> Option<&std::error::Error> {
         match *self {
             Error::LibFtdi(ref ftdi_err) => {
@@ -53,4 +53,4 @@ impl<'a> std::error::Error for Error<'a> {
     }
 }
 
-impl<'a> std::error::Error for LibFtdiError<'a> {}
+impl std::error::Error for LibFtdiError {}
