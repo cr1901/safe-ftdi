@@ -79,6 +79,22 @@ impl Context {
         self.check_ftdi_error(rc, ())
     }
 
+    pub fn purge_usb_rx_buffer(&self) -> Result<()> {
+        let rc = unsafe {
+            ftdic::ftdi_usb_purge_rx_buffer(self.context)
+        };
+
+        self.check_ftdi_error(rc, ())
+    }
+
+    pub fn purge_usb_tx_buffer(&self) -> Result<()> {
+        let rc = unsafe {
+            ftdic::ftdi_usb_purge_tx_buffer(self.context)
+        };
+
+        self.check_ftdi_error(rc, ())
+    }
+
     pub fn read_pins(&self) -> Result<u8> {
         let mut pins : u8 = 0;
         let pins_ptr = std::slice::from_mut(&mut pins).as_mut_ptr();
