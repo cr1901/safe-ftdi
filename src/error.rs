@@ -9,13 +9,15 @@ pub enum Error {
 
 #[derive(Debug)]
 pub struct LibFtdiError {
+    // From looking at libftdi library, the error string is always a static
+    // string literal, so this lifetime is safe.
     err_str : &'static str,
 }
 
 impl LibFtdiError {
     pub fn new(err_str : &'static str) -> LibFtdiError {
         LibFtdiError {
-                err_str : err_str,
+                err_str,
         }
     }
 }

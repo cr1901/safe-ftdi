@@ -19,8 +19,7 @@ pub type Result<T> = result::Result<T, error::Error>;
 impl Context {
     fn check_ftdi_error<T>(&self, rc : raw::c_int, ok_val : T) -> Result<T> {
         if rc < 0 {
-            // From looking at libftdi library, the error string is valid as
-            // long as the ftdi context is alive. Each error string is a null-terminated
+            // From looking at libftdi library, the error string is always a static
             // string literal.
             let slice = unsafe {
                 let err_raw = ftdic::ftdi_get_error_string(self.context);
@@ -49,7 +48,7 @@ impl Context {
     // Combine with new()?
     pub fn open(&mut self, vid : u16, pid : u16) -> Result<()> {
         let rc = unsafe {
-            ftdic::ftdi_usb_open(self.context, vid as raw::c_int, pid as raw::c_int)
+            ftdic::ftdi_usb_open(self.context, raw::c_int::from(vid), raw::c_int::from(pid))
         };
 
         self.check_ftdi_error(rc, ())

@@ -71,12 +71,12 @@ mod mercury {
     // A "1" means "treat pin as output".
     bitflags! {
         struct Pins: u8 {
-            const CSN0 = 0b00000001;
-            const CSN1 = 0b00000010;
-            const SCLK = 0b00000100;
-            const MISO = 0b00001000;
-            const MOSI = 0b00010000;
-            const PROG = 0b00100000;
+            const CSN0 = 0b0000_0001;
+            const CSN1 = 0b0000_0010;
+            const SCLK = 0b0000_0100;
+            const MISO = 0b0000_1000;
+            const MOSI = 0b0001_0000;
+            const PROG = 0b0010_0000;
             const FT245_DIR_IDLE = Self::CSN0.bits | Self::CSN1.bits | Self::SCLK.bits | Self::MOSI.bits;
             const FT245_DIR_PROG = Self::FT245_DIR_IDLE.bits | Self::PROG.bits;
         }
@@ -88,7 +88,7 @@ mod mercury {
             // CSN1 low selects FPGA
             const FPGA = Pins::CSN0.bits;
             const FLASH = Pins::CSN1.bits;
-            const IDLE = Pins::CSN0.bits | Pins::CSN0.bits; // Neither
+            const IDLE = Pins::CSN0.bits | Pins::CSN1.bits; // Neither
         }
     }
 
@@ -102,7 +102,7 @@ mod mercury {
 
         pub fn open(&mut self) -> ftdi::Result<()> {
             self.context.open(0x0403, 0x6001)?;
-            self.context.set_baudrate(3000000)?;
+            self.context.set_baudrate(3_000_000)?;
             Ok(())
         }
 
@@ -224,7 +224,7 @@ mod mercury {
             self.spi_out(&buf_to_flash_cmd, DeviceSelect::FLASH)?;
             self.spi_sel(DeviceSelect::IDLE)?; // Command doesn't start until CS=>high.
 
-            self.flash_poll(300000)?;
+            self.flash_poll(300_000)?;
 
             Ok(())
         }
@@ -234,19 +234,19 @@ mod mercury {
             let erase_sector_0b_cmd = [0x7C, 0x00, 0x10, 0x00];
             let mut erase_sector_other_cmd = [0x7C, 0x00, 0x00, 0x00];
 
-            self.do_erase_cmd(&erase_sector_0a_cmd, 300000)?;
-            self.do_erase_cmd(&erase_sector_0b_cmd, 300000)?;
+            self.do_erase_cmd(erase_sector_0a_cmd, 300_000)?;
+            self.do_erase_cmd(erase_sector_0b_cmd, 300_000)?;
 
             for i in 0..16 {
                 erase_sector_other_cmd[1] = i << 1; // Sectors begin at PA8, or Bit 17.
-                self.do_erase_cmd(&erase_sector_other_cmd, 300000)?;
+                self.do_erase_cmd(erase_sector_other_cmd, 300_000)?;
             }
 
             Ok(())
         }
 
-        fn do_erase_cmd(&mut self, cmd : &[u8; 4], timeout : u32) -> MercuryResult<()> {
-            self.spi_out(cmd, DeviceSelect::FLASH)?;
+        fn do_erase_cmd(&mut self, cmd : [u8; 4], timeout : u32) -> MercuryResult<()> {
+            self.spi_out(&cmd, DeviceSelect::FLASH)?;
             self.spi_sel(DeviceSelect::IDLE)?;
             self.flash_poll(timeout)?;
             Ok(())
@@ -311,7 +311,7 @@ fn main() {
                     // last_page_size = n as u16;
                     break;
                 } else {
-                    merc.flash_write(&page_buf, page_num as u32).unwrap();
+                    merc.flash_write(&page_buf, u32::from(page_num)).unwrap();
                     last_page_written = page_num;
                 }
             },
@@ -327,7 +327,7 @@ fn main() {
             // If this was actually end of file, everything's fine.
             if n == 0 {
                 // TODO: Zero-pad page_buf by 264 - last_page_size
-                merc.flash_write(&page_buf, (last_page_written + 1) as u32).unwrap();
+                merc.flash_write(&page_buf, u32::from(last_page_written + 1)).unwrap();
             } else {
                 println!("Expected End of File- file is too large to write.");
                 std::process::exit(-2);
