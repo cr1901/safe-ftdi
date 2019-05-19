@@ -9,6 +9,8 @@ pub enum Error {
 
 #[derive(Debug)]
 pub struct LibFtdiError {
+    // From looking at libftdi library, the error string is always a static
+    // string literal, so this lifetime is safe.
     err_str : &'static str,
 }
 
