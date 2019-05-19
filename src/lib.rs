@@ -48,7 +48,7 @@ impl Context {
     // Combine with new()?
     pub fn open(&mut self, vid : u16, pid : u16) -> Result<()> {
         let rc = unsafe {
-            ftdic::ftdi_usb_open(self.context, vid as raw::c_int, pid as raw::c_int)
+            ftdic::ftdi_usb_open(self.context, raw::c_int::from(vid), raw::c_int::from(pid))
         };
 
         self.check_ftdi_error(rc, ())

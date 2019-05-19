@@ -17,7 +17,7 @@ pub struct LibFtdiError {
 impl LibFtdiError {
     pub fn new(err_str : &'static str) -> LibFtdiError {
         LibFtdiError {
-                err_str : err_str,
+                err_str,
         }
     }
 }
