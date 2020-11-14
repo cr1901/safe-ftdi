@@ -11,13 +11,13 @@ use error::*;
 
 
 pub struct Context {
-    context : *mut ftdic::ftdi_context,
+    pub context : *mut ftdic::ftdi_context,
 }
 
 pub type Result<T> = result::Result<T, error::Error>;
 
 impl Context {
-    fn check_ftdi_error<T>(&self, rc : raw::c_int, ok_val : T) -> Result<T> {
+    pub fn check_ftdi_error<T>(&self, rc : raw::c_int, ok_val : T) -> Result<T> {
         if rc < 0 {
             // From looking at libftdi library, the error string is always a static
             // string literal.
