@@ -25,9 +25,9 @@ impl LibFtdiError {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Error::LibFtdi(_) => {
-                write!(f, "libftdi-internal error")
+        match &*self {
+            Error::LibFtdi(e) => {
+                e.fmt(f)
             },
             Error::MallocFailure => {
                 write!(f, "malloc() failure")
