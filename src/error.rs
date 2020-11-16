@@ -43,7 +43,7 @@ impl fmt::Display for LibFtdiError {
 }
 
 impl std::error::Error for Error {
-    fn cause(&self) -> Option<&std::error::Error> {
+    fn cause(&self) -> Option<&dyn std::error::Error> {
         match *self {
             Error::LibFtdi(ref ftdi_err) => {
                 Some(ftdi_err)

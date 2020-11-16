@@ -25,8 +25,8 @@ transitively `safe-ftdi` requires it as well. I have tested the bindings
 on Windows using the [MSYS2](https://www.msys2.org) environment, and
 the GNU ABI version of `rustc`.
 
-The library in principle compiles on stable Rust 1.26 or greater,
-which is when the `?` operator was introduced. Older nightly compilers
+The library in principle compiles on stable Rust 1.27 or greater,
+which is when the `dyn` syntax was introduced. Older nightly compilers
 should be able to compile `safe-ftdi` as well.
 
 ## License
