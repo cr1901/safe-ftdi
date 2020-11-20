@@ -54,6 +54,10 @@ impl Context {
         self.check_ftdi_error(rc, ())
     }
 
+    pub fn get_ftdi_context(&self) -> *mut ftdic::ftdi_context {
+        self.context
+    }
+
     pub fn set_baudrate(&self, baudrate : u32) -> Result<()> {
         let rc = unsafe {
             ftdic::ftdi_set_baudrate(self.context, baudrate as raw::c_int)
