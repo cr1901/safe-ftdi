@@ -24,6 +24,19 @@ impl Context {
         }
     }
 
+    pub fn set_interface(&self, interface: Interface) -> Result<()> {
+        let interface = match interface {
+            Interface::Any => ftdic::ftdi_interface::INTERFACE_ANY,
+            Interface::A => ftdic::ftdi_interface::INTERFACE_A,
+            Interface::B => ftdic::ftdi_interface::INTERFACE_B,
+            Interface::C => ftdic::ftdi_interface::INTERFACE_C,
+            Interface::D => ftdic::ftdi_interface::INTERFACE_D,
+        };
+
+        let rc = unsafe { ftdic::ftdi_set_interface(self.get_ftdi_context(), interface) };
+        self.check_ftdi_error(rc)
+    }
+
     pub fn check_ftdi_error(&self, rc: raw::c_int) -> Result<()> {
         if rc < 0 {
             // From looking at libftdi library, the error string is always a static
@@ -51,28 +64,39 @@ impl Drop for Context {
     }
 }
 
+#[derive(Debug)]
+pub enum Interface {
+    Any,
+    A,
+    B,
+    C,
+    D,
+}
+
 pub struct Device {
     context: Context,
 }
 
 impl Device {
     /// Opens the first device with a given vendor and product ids
-    pub fn from_vid_pid(vid: u16, pid: u16) -> Result<Device> {
-        Device::from_description_serial(vid, pid, None, None)
+    pub fn from_vid_pid(interface: Interface, vid: u16, pid: u16) -> Result<Device> {
+        Device::from_description_serial(interface, vid, pid, None, None)
     }
 
     /// Opens the first device with a given, vendor id, product id, description, and serial
     pub fn from_description_serial(
+        interface: Interface,
         vid: u16,
         pid: u16,
         description: Option<String>,
         serial: Option<String>,
     ) -> Result<Device> {
-        Device::from_description_serial_index(vid, pid, description, serial, 0)
+        Device::from_description_serial_index(interface, vid, pid, description, serial, 0)
     }
 
     /// Opens the index-th device with a given, vendor id, product id, description, and serial
     pub fn from_description_serial_index(
+        interface: Interface,
         vid: u16,
         pid: u16,
         description: Option<String>,
@@ -80,6 +104,8 @@ impl Device {
         index: u32,
     ) -> Result<Device> {
         let context = Context::new()?;
+        context.set_interface(interface)?;
+
         let (desc, desc_supplied) = match description {
             Some(d) => (CString::new(d).unwrap().into_raw(), true),
             None => (std::ptr::null_mut(), false),
@@ -92,11 +118,11 @@ impl Device {
         let rc = unsafe {
             ftdic::ftdi_usb_open_desc_index(
                 context.0,
-                raw::c_int::from(vid),
-                raw::c_int::from(pid),
+                vid as raw::c_int,
+                pid as raw::c_int,
                 desc,
                 ser,
-                raw::c_uint::from(index),
+                index as raw::c_uint,
             )
         };
 
@@ -111,8 +137,9 @@ impl Device {
     }
 
     /// Opens the device at a given USB bus and device address
-    pub fn from_bus_addr(bus: u8, addr: u8) -> Result<Device> {
+    pub fn from_bus_addr(interface: Interface, bus: u8, addr: u8) -> Result<Device> {
         let context = Context::new()?;
+        context.set_interface(interface)?;
 
         let rc = unsafe { ftdic::ftdi_usb_open_bus_addr(context.get_ftdi_context(), bus, addr) };
         context.check_ftdi_error(rc)?;
@@ -127,16 +154,40 @@ impl Device {
     /// - i:<vendor>:<product> first device with given vendor and product id, ids can be decimal, octal (preceded by "0") or hex (preceded by "0x")
     /// - i:<vendor>:<product>:<index> as above with index being the number of the device (starting with 0) if there are more than one
     /// - s:<vendor>:<product>:<serial> first device with given vendor id, product id and serial string
-    pub fn from_description_string(description: String) -> Result<Device> {
+    pub fn from_description_string(interface: Interface, description: String) -> Result<Device> {
         let context = Context::new()?;
+        context.set_interface(interface)?;
+
         let desc = CString::new(description).unwrap().into_raw();
-
         let rc = unsafe { ftdic::ftdi_usb_open_string(context.get_ftdi_context(), desc) };
-
         drop(unsafe { CString::from_raw(desc) }); // String must be manually free'd
 
         context.check_ftdi_error(rc)?;
         Ok(Device { context })
+    }
+
+    /// Set the special event character
+    pub fn set_event_char(&self, event_char: u8, enable: bool) -> Result<()> {
+        let rc = unsafe {
+            ftdic::ftdi_set_event_char(
+                self.context.get_ftdi_context(),
+                event_char as raw::c_uchar,
+                enable as raw::c_uchar,
+            )
+        };
+        self.context.check_ftdi_error(rc)
+    }
+
+    /// Set error character
+    pub fn set_error_char(&self, error_char: u8, enable: bool) -> Result<()> {
+        let rc = unsafe {
+            ftdic::ftdi_set_error_char(
+                self.context.get_ftdi_context(),
+                error_char as raw::c_uchar,
+                enable as raw::c_uchar,
+            )
+        };
+        self.context.check_ftdi_error(rc)
     }
 
     pub fn set_baudrate(&self, baudrate: u32) -> Result<()> {
@@ -205,6 +256,14 @@ impl Device {
 
         self.context.check_ftdi_error(rc)?;
         Ok(rc as u32)
+    }
+
+    /// Close device
+    pub fn close(self) -> Result<()> {
+        let rc = unsafe { ftdic::ftdi_usb_close(self.context.get_ftdi_context()) };
+        self.context.check_ftdi_error(rc)?;
+        drop(self);
+        Ok(())
     }
 }
 
