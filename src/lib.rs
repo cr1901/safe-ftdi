@@ -143,3 +143,63 @@ impl Device {
         Ok(rc as u32)
     }
 }
+
+/// List available devices.
+///
+/// This uses [`to_string_lossy`][std::ffi::CStr::to_string_lossy] when copying strings from libftdi1,
+/// meaning it will replace any invalid UTF-8 sequences with
+/// [`U+FFFD REPLACEMENT CHARACTER`][std::char::REPLACEMENT_CHARACTER]
+pub fn list_devices() -> Result<Vec<DeviceInfo>> {
+    let context = Context::new()?;
+    let mut device_list: *mut ftdic::ftdi_device_list = std::ptr::null_mut();
+
+    let rc = unsafe { ftdic::ftdi_usb_find_all(context.0, &mut device_list, 0, 0) };
+    context.check_ftdi_error(rc)?;
+
+    let mut devices = Vec::with_capacity(rc as usize);
+    let mut manufacturer_buf = [0i8; 100];
+    let mut description_buf = [0i8; 100];
+    let mut serial_buf = [0i8; 100];
+
+    let mut curdev = device_list;
+    while !curdev.is_null() {
+        let rc =  unsafe {
+            ftdic::ftdi_usb_get_strings(
+                context.0,
+                (*curdev).dev,
+                manufacturer_buf.as_mut_ptr(),
+                manufacturer_buf.len() as i32,
+                description_buf.as_mut_ptr(),
+                description_buf.len() as i32,
+                serial_buf.as_mut_ptr(),
+                serial_buf.len() as i32,
+            )
+        };
+        if let Err(e) = context.check_ftdi_error(rc) {
+            unsafe { ftdic::ftdi_list_free(&mut device_list) };
+            return Err(e);
+        }
+
+        let manufacturer = unsafe { CStr::from_ptr(manufacturer_buf.as_mut_ptr()) }.to_string_lossy().into_owned();
+        let description = unsafe { CStr::from_ptr(description_buf.as_mut_ptr()) }.to_string_lossy().into_owned();
+        let serial = unsafe { CStr::from_ptr(serial_buf.as_mut_ptr()) }.to_string_lossy().into_owned();
+
+        devices.push(DeviceInfo {
+            manufacturer,
+            description,
+            serial,
+        });
+
+        curdev = unsafe { (*curdev).next };
+    }
+
+    unsafe { ftdic::ftdi_list_free(&mut device_list) };
+    Ok(devices)
+}
+
+#[derive(Debug)]
+pub struct DeviceInfo {
+    manufacturer: String,
+    description: String,
+    serial: String
+}
