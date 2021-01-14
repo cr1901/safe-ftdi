@@ -130,7 +130,7 @@ impl Device {
             drop(unsafe { CString::from_raw(desc) }); // String must be manually free'd
         }
         if ser_supplied {
-            drop(unsafe { CString::from_raw(desc) }); // String must be manually free'd
+            drop(unsafe { CString::from_raw(ser) }); // String must be manually free'd
         }
         context.check_ftdi_error(rc)?;
         Ok(Device { context })
@@ -327,9 +327,9 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>> {
     Ok(devices)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DeviceInfo {
-    manufacturer: String,
-    description: String,
-    serial: String,
+    pub manufacturer: String,
+    pub description: String,
+    pub serial: String,
 }
