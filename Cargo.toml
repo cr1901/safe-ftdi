@@ -10,7 +10,7 @@ categories = ["api-bindings", "embedded"]
 readme = "README.md"
 
 [dependencies]
-libftdi1-sys = "1.0.0-alpha3"
+libftdi1-sys = { git = "https://github.com/eloc3147/libftdi1-sys", features = ["libusb1-sys"] }
 
 [dev-dependencies]
 argparse = "0.2.2"
