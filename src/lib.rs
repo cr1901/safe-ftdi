@@ -2,9 +2,6 @@ extern crate libftdi1_sys as ftdic;
 use std::ffi::{CStr, CString};
 use std::os::raw;
 
-pub mod mpsse;
-use mpsse::MpsseMode;
-
 pub mod error;
 use error::{Error, LibFtdiError};
 
@@ -71,6 +68,26 @@ pub enum Interface {
     B,
     C,
     D,
+}
+
+#[derive(Debug)]
+pub enum FlowControl {
+    Disabled,
+    RtsCts,
+    DtrDsr,
+}
+
+#[derive(Debug)]
+pub enum BitMode {
+    Reset,
+    Bitbang,
+    Mpsse,
+    SyncBB,
+    Mcu,
+    Opto,
+    Cbus,
+    SyncFF,
+    FT1284,
 }
 
 pub struct Device {
@@ -196,14 +213,66 @@ impl Device {
         self.context.check_ftdi_error(rc)
     }
 
-    pub fn set_bitmode(&self, bitmask: u8, mode: MpsseMode) -> Result<()> {
+    pub fn set_bitmode(&self, bitmask: u8, mode: BitMode) -> Result<()> {
+        let mode = match mode {
+            BitMode::Reset => ftdic::ftdi_mpsse_mode::BITMODE_RESET.0,
+            BitMode::Bitbang => ftdic::ftdi_mpsse_mode::BITMODE_BITBANG.0,
+            BitMode::Mpsse => ftdic::ftdi_mpsse_mode::BITMODE_MPSSE.0,
+            BitMode::SyncBB => ftdic::ftdi_mpsse_mode::BITMODE_SYNCBB.0,
+            BitMode::Mcu => ftdic::ftdi_mpsse_mode::BITMODE_MCU.0,
+            BitMode::Opto => ftdic::ftdi_mpsse_mode::BITMODE_OPTO.0,
+            BitMode::Cbus => ftdic::ftdi_mpsse_mode::BITMODE_CBUS.0,
+            BitMode::SyncFF => ftdic::ftdi_mpsse_mode::BITMODE_SYNCFF.0,
+            BitMode::FT1284 => ftdic::ftdi_mpsse_mode::BITMODE_FT1284.0,
+        };
+
         let rc = unsafe {
             ftdic::ftdi_set_bitmode(
                 self.context.get_ftdi_context(),
                 bitmask as raw::c_uchar,
-                mode.0 as raw::c_uchar,
+                mode as raw::c_uchar,
             )
         };
+
+        self.context.check_ftdi_error(rc)
+    }
+
+    /// Set latency timer
+    /// The FTDI chip keeps data in the internal buffer for a specific amount of time if the buffer is not full yet to decrease load on the usb bus.
+    pub fn set_latency_timer(&self, latency: u8) -> Result<()> {
+        let rc = unsafe {
+            ftdic::ftdi_set_latency_timer(self.context.get_ftdi_context(), latency as raw::c_uchar)
+        };
+
+        self.context.check_ftdi_error(rc)
+    }
+
+    pub fn set_timeouts(&self, read_timeout: i32, write_timeout: i32) {
+        let ctx = self.context.get_ftdi_context();
+        unsafe { (*ctx).usb_read_timeout = read_timeout as raw::c_int };
+        unsafe { (*ctx).usb_write_timeout = write_timeout as raw::c_int };
+    }
+
+    /// Set flowcontrol for ftdi chip
+    /// Note: Do not use this function to enable XON/XOFF mode, use [`set_flow_control_xonxoff`][Device::set_flow_control_xonxoff] instead.
+    pub fn set_flow_control(&self, flow_control: FlowControl) -> Result<()> {
+        let flow_control = match flow_control {
+            FlowControl::Disabled => ftdic::SIO_DISABLE_FLOW_CTRL,
+            FlowControl::RtsCts => ftdic::SIO_RTS_CTS_HS,
+            FlowControl::DtrDsr => ftdic::SIO_DTR_DSR_HS,
+        };
+
+        let rc = unsafe {
+            ftdic::ftdi_setflowctrl(self.context.get_ftdi_context(), flow_control as i32)
+        };
+
+        self.context.check_ftdi_error(rc)
+    }
+
+    /// Set XON/XOFF flowcontrol for ftdi chip
+    pub fn set_flow_control_xonxoff(&self, xon: u8, xoff: u8) -> Result<()> {
+        let rc =
+            unsafe { ftdic::ftdi_setflowctrl_xonxoff(self.context.get_ftdi_context(), xon, xoff) };
 
         self.context.check_ftdi_error(rc)
     }
@@ -256,6 +325,43 @@ impl Device {
 
         self.context.check_ftdi_error(rc)?;
         Ok(rc as u32)
+    }
+
+    /// Return device ID strings from the eeprom. Device needs to be connected.
+    pub fn eeprom_get_strings(&self) -> Result<DeviceInfo> {
+        let mut manufacturer_buf = [0i8; 100];
+        let mut description_buf = [0i8; 100];
+        let mut serial_buf = [0i8; 100];
+
+        let rc = unsafe {
+            ftdic::ftdi_eeprom_get_strings(
+                self.context.get_ftdi_context(),
+                manufacturer_buf.as_mut_ptr(),
+                manufacturer_buf.len() as i32,
+                description_buf.as_mut_ptr(),
+                description_buf.len() as i32,
+                serial_buf.as_mut_ptr(),
+                serial_buf.len() as i32,
+            )
+        };
+
+        self.context.check_ftdi_error(rc)?;
+
+        let manufacturer = unsafe { CStr::from_ptr(manufacturer_buf.as_mut_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        let description = unsafe { CStr::from_ptr(description_buf.as_mut_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        let serial = unsafe { CStr::from_ptr(serial_buf.as_mut_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+
+        Ok(DeviceInfo {
+            manufacturer,
+            description,
+            serial,
+        })
     }
 
     /// Close device
