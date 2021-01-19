@@ -1,6 +1,6 @@
 [package]
 name = "safe-ftdi"
-version = "0.2.1"
+version = "1.0.0"
 license = "MIT/Apache-2.0"
 description = "A safe wrapper around libftdi."
 repository = "https://github.com/cr1901/safe-ftdi"
