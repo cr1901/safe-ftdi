@@ -1,9 +1,16 @@
 extern crate libftdi1_sys as ftdic;
+
 use std::ffi::{CStr, CString};
+use std::marker::PhantomData;
 use std::os::raw;
+use std::pin::Pin;
+use std::time::Duration;
 
 pub mod error;
 use error::{Error, LibFtdiError};
+
+extern crate bitflags;
+use bitflags::bitflags;
 
 /// Low-level wrapper around a ftdi_context instance
 pub struct Context(*mut ftdic::ftdi_context);
@@ -61,7 +68,7 @@ impl Drop for Context {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Interface {
     Any,
     A,
@@ -70,14 +77,14 @@ pub enum Interface {
     D,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum FlowControl {
     Disabled,
     RtsCts,
     DtrDsr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum BitMode {
     Reset,
     Bitbang,
@@ -92,6 +99,36 @@ pub enum BitMode {
 
 pub struct Device {
     context: Context,
+    eeprom_read: bool,
+}
+
+pub struct AsyncRead<'b> {
+    phantom: PhantomData<&'b mut [u8]>,
+    transfer_control: *mut ftdic::ftdi_transfer_control,
+}
+
+impl<'b> AsyncRead<'b> {
+    /// Wait for completion of the transfer.
+    pub fn wait(self) -> Result<usize> {
+        let rc = unsafe { ftdic::ftdi_transfer_data_done(self.transfer_control) };
+        if rc < 0 {
+            Err(Error::LibFtdi(LibFtdiError::new(
+                "Error completing transfer",
+            )))
+        } else {
+            Ok(rc as usize)
+        }
+    }
+
+    /// Cancel transfer and wait for completion.
+    pub fn cancel(self, timeout: Duration) {
+        let mut time = ftdic::timeval {
+            tv_sec: (timeout.as_secs() as i32).into(),
+            tv_usec: (timeout.subsec_micros() as i32).into(),
+        };
+
+        unsafe { ftdic::ftdi_transfer_data_cancel(self.transfer_control, &mut time) };
+    }
 }
 
 impl Device {
@@ -150,7 +187,10 @@ impl Device {
             drop(unsafe { CString::from_raw(ser) }); // String must be manually free'd
         }
         context.check_ftdi_error(rc)?;
-        Ok(Device { context })
+        Ok(Device {
+            context,
+            eeprom_read: false,
+        })
     }
 
     /// Opens the device at a given USB bus and device address
@@ -160,7 +200,10 @@ impl Device {
 
         let rc = unsafe { ftdic::ftdi_usb_open_bus_addr(context.get_ftdi_context(), bus, addr) };
         context.check_ftdi_error(rc)?;
-        Ok(Device { context })
+        Ok(Device {
+            context,
+            eeprom_read: false,
+        })
     }
 
     /// Opens the ftdi-device described by a description-string
@@ -180,7 +223,10 @@ impl Device {
         drop(unsafe { CString::from_raw(desc) }); // String must be manually free'd
 
         context.check_ftdi_error(rc)?;
-        Ok(Device { context })
+        Ok(Device {
+            context,
+            eeprom_read: false,
+        })
     }
 
     /// Set the special event character
@@ -277,6 +323,29 @@ impl Device {
         self.context.check_ftdi_error(rc)
     }
 
+    /// Configure read buffer chunk size. Default is 4096.
+    /// This is capped to 16,384 on Linux by libftdi1
+    pub fn set_read_chunk_size(&self, size: u32) -> Result<()> {
+        let rc = unsafe {
+            ftdic::ftdi_read_data_set_chunksize(
+                self.context.get_ftdi_context(),
+                size as raw::c_uint,
+            )
+        };
+        self.context.check_ftdi_error(rc)
+    }
+
+    /// Configure read buffer chunk size. Default is 4096.
+    pub fn set_write_chunk_size(&self, size: u32) -> Result<()> {
+        let rc = unsafe {
+            ftdic::ftdi_write_data_set_chunksize(
+                self.context.get_ftdi_context(),
+                size as raw::c_uint,
+            )
+        };
+        self.context.check_ftdi_error(rc)
+    }
+
     pub fn purge_usb_buffers(&self) -> Result<()> {
         let rc = unsafe { ftdic::ftdi_usb_purge_buffers(self.context.get_ftdi_context()) };
 
@@ -316,6 +385,27 @@ impl Device {
         Ok(rc as u32)
     }
 
+    /// Reads data from the chip. Does not wait for completion of the transfer nor does it make sure that the transfer was successful.
+    pub fn read_data_async<'b>(&self, mut buf: Pin<&'b mut [u8]>) -> Result<AsyncRead<'b>> {
+        let res = unsafe {
+            ftdic::ftdi_read_data_submit(
+                self.context.get_ftdi_context(),
+                buf.as_mut_ptr(),
+                buf.len() as i32,
+            )
+        };
+        if res.is_null() {
+            Err(Error::LibFtdi(LibFtdiError::new(
+                "Error starting async read",
+            )))
+        } else {
+            Ok(AsyncRead {
+                phantom: PhantomData::default(),
+                transfer_control: res,
+            })
+        }
+    }
+
     pub fn write_data(&self, data: &[u8]) -> Result<u32> {
         let raw_ptr = data.as_ptr();
         let raw_len = data.len() as i32;
@@ -327,11 +417,32 @@ impl Device {
         Ok(rc as u32)
     }
 
+    /// Load and decode the data from the chip EEPROM
+    pub fn load_eeprom_data(&mut self) -> Result<()> {
+        let mut rc = unsafe { ftdic::ftdi_read_eeprom(self.context.get_ftdi_context()) };
+        self.context.check_ftdi_error(rc)?;
+
+        rc = unsafe {
+            ftdic::ftdi_eeprom_decode(self.context.get_ftdi_context(), false as raw::c_int)
+        };
+        self.context.check_ftdi_error(rc)?;
+
+        self.eeprom_read = true;
+        Ok(())
+    }
+
     /// Return device ID strings from the eeprom. Device needs to be connected.
-    pub fn eeprom_get_strings(&self) -> Result<DeviceInfo> {
+    pub fn eeprom_get_strings(&mut self) -> Result<DeviceInfo> {
+        if !self.eeprom_read {
+            self.load_eeprom_data()?;
+        }
+
         let mut manufacturer_buf = [0i8; 100];
         let mut description_buf = [0i8; 100];
         let mut serial_buf = [0i8; 100];
+
+        let rc = unsafe { ftdic::ftdi_read_eeprom(self.context.get_ftdi_context()) };
+        self.context.check_ftdi_error(rc)?;
 
         let rc = unsafe {
             ftdic::ftdi_eeprom_get_strings(
