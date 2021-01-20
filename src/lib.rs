@@ -9,9 +9,6 @@ use std::time::Duration;
 pub mod error;
 use error::{Error, LibFtdiError};
 
-extern crate bitflags;
-use bitflags::bitflags;
-
 /// Low-level wrapper around a ftdi_context instance
 pub struct Context(*mut ftdic::ftdi_context);
 
