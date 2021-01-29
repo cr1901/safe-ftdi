@@ -95,11 +95,6 @@ pub enum BitMode {
     FT1284,
 }
 
-pub struct Device {
-    context: Context,
-    eeprom_read: bool,
-}
-
 pub struct AsyncRead<'b> {
     phantom: PhantomData<&'b mut [u8]>,
     transfer_control: *mut ftdic::ftdi_transfer_control,
@@ -127,6 +122,12 @@ impl<'b> AsyncRead<'b> {
 
         unsafe { ftdic::ftdi_transfer_data_cancel(self.transfer_control, &mut time) };
     }
+}
+
+/// High level control for a FTDI device
+pub struct Device {
+    context: Context,
+    eeprom_read: bool,
 }
 
 impl Device {
