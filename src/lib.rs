@@ -349,20 +349,23 @@ impl Device {
         self.context.check_ftdi_error(rc)
     }
 
+    /// Clears the RX and TX FIFOs on the chip and the internal read buffer.
     pub fn purge_usb_buffers(&self) -> Result<()> {
-        let rc = unsafe { ftdic::ftdi_usb_purge_buffers(self.context.get_ftdi_context()) };
+        let rc = unsafe { ftdic::ftdi_tcioflush(self.context.get_ftdi_context()) };
 
         self.context.check_ftdi_error(rc)
     }
 
+    /// Clears the read buffer on the chip and the internal read buffer.
     pub fn purge_usb_rx_buffer(&self) -> Result<()> {
-        let rc = unsafe { ftdic::ftdi_usb_purge_rx_buffer(self.context.get_ftdi_context()) };
+        let rc = unsafe { ftdic::ftdi_tciflush(self.context.get_ftdi_context()) };
 
         self.context.check_ftdi_error(rc)
     }
 
+    /// Clears the write buffer on the chip.
     pub fn purge_usb_tx_buffer(&self) -> Result<()> {
-        let rc = unsafe { ftdic::ftdi_usb_purge_tx_buffer(self.context.get_ftdi_context()) };
+        let rc = unsafe { ftdic::ftdi_tcoflush(self.context.get_ftdi_context()) };
 
         self.context.check_ftdi_error(rc)
     }
