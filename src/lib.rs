@@ -43,7 +43,7 @@ impl Context {
             // From looking at libftdi library, the error string is always a static
             // string literal.
             let slice = unsafe {
-                let err_raw = ftdic::ftdi_get_error_string(self.0);
+                let err_raw = ftdic::ftdi_get_error_string(self.get_ftdi_context());
                 CStr::from_ptr(err_raw)
             };
 
@@ -54,6 +54,7 @@ impl Context {
         }
     }
 
+    #[inline]
     pub fn get_ftdi_context(&self) -> *mut ftdic::ftdi_context {
         self.0
     }
@@ -250,12 +251,16 @@ impl Device {
         self.context.check_ftdi_error(rc)
     }
 
+    /// Sets the chip baud rate
     pub fn set_baudrate(&self, baudrate: u32) -> Result<()> {
         let rc = unsafe { ftdic::ftdi_set_baudrate(self.context.0, baudrate as raw::c_int) };
 
         self.context.check_ftdi_error(rc)
     }
 
+    /// Enable/disable bitbang modes.
+    ///
+    /// A HIGH/ON bit configures a line as output, and vice versa
     pub fn set_bitmode(&self, bitmask: u8, mode: BitMode) -> Result<()> {
         let mode = match mode {
             BitMode::Reset => ftdic::ftdi_mpsse_mode::BITMODE_RESET.0,
@@ -290,6 +295,7 @@ impl Device {
         self.context.check_ftdi_error(rc)
     }
 
+    /// Set USB read/write timeouts
     pub fn set_timeouts(&self, read_timeout: i32, write_timeout: i32) {
         let ctx = self.context.get_ftdi_context();
         unsafe { (*ctx).usb_read_timeout = read_timeout as raw::c_int };
@@ -332,7 +338,7 @@ impl Device {
         self.context.check_ftdi_error(rc)
     }
 
-    /// Configure read buffer chunk size. Default is 4096.
+    /// Configure write buffer chunk size. Default is 4096.
     pub fn set_write_chunk_size(&self, size: u32) -> Result<()> {
         let rc = unsafe {
             ftdic::ftdi_write_data_set_chunksize(
@@ -361,6 +367,7 @@ impl Device {
         self.context.check_ftdi_error(rc)
     }
 
+    /// Directly read pin state, circumventing the read buffer. Useful for bitbang mode.
     pub fn read_pins(&self) -> Result<u8> {
         let mut pins: u8 = 0;
         let pins_ptr = std::slice::from_mut(&mut pins).as_mut_ptr();
@@ -371,6 +378,7 @@ impl Device {
         Ok(pins)
     }
 
+    /// Reads data in chunks (see [`set_read_chunk_size`][Device::set_read_chunk_size]) from the chip.
     pub fn read_data(&self, data: &mut [u8]) -> Result<u32> {
         let raw_ptr = data.as_mut_ptr();
         let raw_len = data.len() as i32;
@@ -403,6 +411,7 @@ impl Device {
         }
     }
 
+    /// Writes data in chunks (see f[`set_write_chunk_size`][Device::set_write_chunk_size]) to the chip
     pub fn write_data(&self, data: &[u8]) -> Result<u32> {
         let raw_ptr = data.as_ptr();
         let raw_len = data.len() as i32;
