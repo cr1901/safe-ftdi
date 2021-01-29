@@ -208,10 +208,10 @@ impl Device {
     ///
     /// Intended to be used for parsing a device-description given as commandline argument
     ///
-    /// - d:<devicenode> path of bus and device-node (e.g. "003/001") within usb device tree (usually at /proc/bus/usb/)
-    /// - i:<vendor>:<product> first device with given vendor and product id, ids can be decimal, octal (preceded by "0") or hex (preceded by "0x")
-    /// - i:<vendor>:<product>:<index> as above with index being the number of the device (starting with 0) if there are more than one
-    /// - s:<vendor>:<product>:<serial> first device with given vendor id, product id and serial string
+    /// - `d:<devicenode>` path of bus and device-node (e.g. "003/001") within usb device tree (usually at /proc/bus/usb/)
+    /// - `i:<vendor>:<product>` first device with given vendor and product id, ids can be decimal, octal (preceded by "0") or hex (preceded by "0x")
+    /// - `i:<vendor>:<product>:<index>` as above with index being the number of the device (starting with 0) if there are more than one
+    /// - `s:<vendor>:<product>:<serial>` first device with given vendor id, product id and serial string
     pub fn from_description_string(interface: Interface, description: String) -> Result<Device> {
         let context = Context::new()?;
         context.set_interface(interface)?;
