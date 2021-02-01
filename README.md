@@ -7,8 +7,8 @@
 as a thin wrapper around
 [`libftdi1-sys`](https://github.com/tanriol/libftdi1-sys). Functions from
 `libftdi` are implemented in `safe-ftdi` on an as-needed basis, and they
-arr named the same as their `libftdi` counterparts with the `ftdi_` prefix
-stripped.
+are mostly named the same as their `libftdi` counterparts with the `ftdi_`
+prefix stripped.
 
 Documentation on specific functions will come soon, but the example
 directory contains a reimplementation of
@@ -20,14 +20,12 @@ FPGA development board using the bitbang mode of the FT245.
 ## Prerequisites
 
 [`libftdi1-sys`](https://github.com/tanriol/libftdi1-sys) requires the
-[`pkg-config`](https://crates.io/crates/pkg-config) crate, and so
-transitively `safe-ftdi` requires it as well. I have tested the bindings
-on Windows using the [MSYS2](https://www.msys2.org) environment, and
-the GNU ABI version of `rustc`.
+[`pkg-config`](https://crates.io/crates/pkg-config) crate everywhere except on Windows/MSVC, where it requires [`vcpkg`](https://crates.io/crates/vcpkg), and so
+transitively `safe-ftdi` requires one of those as well. I have tested the bindings
+on the Windows MSVC environment, and the GNU ABI version of `rustc`.
 
-The library in principle compiles on stable Rust 1.27 or greater,
-which is when the `dyn` syntax was introduced. Older nightly compilers
-should be able to compile `safe-ftdi` as well.
+The library in principle compiles on stable Rust 1.34 or greater,
+which is what is required by `libftdi1-sys`.
 
 ## License
 
