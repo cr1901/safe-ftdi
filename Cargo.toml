@@ -12,6 +12,9 @@ readme = "README.md"
 [dependencies]
 libftdi1-sys = "1.0.0"
 
+[features]
+vendored = ["libftdi1-sys/vendored"]
+
 [dev-dependencies]
 argparse = "0.2.2"
 bitreader = "0.3.1"
