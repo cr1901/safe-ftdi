@@ -13,6 +13,7 @@ readme = "README.md"
 libftdi1-sys = "1.0.0"
 
 [features]
+default = []
 vendored = ["libftdi1-sys/vendored"]
 
 [dev-dependencies]
