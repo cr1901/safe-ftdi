@@ -1,37 +1,36 @@
 extern crate argparse;
-extern crate safe_ftdi as ftdi;
 extern crate bitreader;
 extern crate byteorder;
+extern crate safe_ftdi as ftdi;
 #[macro_use]
 extern crate bitflags;
 
-use std::fs::{File};
-use std::result;
-use std::fmt;
-use std::io::{Read};
 use argparse::{ArgumentParser, Store};
+use std::fmt;
+use std::fs::File;
+use std::io::Read;
+use std::result;
 
 // Rewrite of Mercury Programmer Command Line (mercpcl) utility in Rust.
 // Meant to be demonstrative of functionality more than great coding practices
 // (don't use unwrap())...
 
 mod mercury {
-    use std::slice;
-    use ftdi;
-    use fmt;
-    use result;
-    use byteorder::{ByteOrder, LittleEndian};
     use bitreader::BitReader;
-    use ftdi::mpsse::MpsseMode;
+    use byteorder::{ByteOrder, LittleEndian};
+    use fmt;
+    use ftdi::{BitMode, Device, Interface};
+    use result;
+    use std::slice;
 
     pub struct Mercury {
-        context : ftdi::Context,
+        device: Device,
     }
 
     #[derive(Debug)]
     pub enum MercuryError {
         SafeFtdi(ftdi::error::Error),
-        Timeout
+        Timeout,
     }
 
     pub type MercuryResult<T> = result::Result<T, MercuryError>;
@@ -39,9 +38,9 @@ mod mercury {
     impl fmt::Display for MercuryError {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match *self {
-                 MercuryError::SafeFtdi(_) => {
+                MercuryError::SafeFtdi(_) => {
                     write!(f, "safe-ftdi error")
-                },
+                }
                 MercuryError::Timeout => {
                     write!(f, "timeout waiting for flash")
                 }
@@ -50,14 +49,10 @@ mod mercury {
     }
 
     impl ::std::error::Error for MercuryError {
-        fn cause(&self) -> Option<&::std::error::Error> {
+        fn cause(&self) -> Option<&dyn (::std::error::Error)> {
             match *self {
-                MercuryError::SafeFtdi(ref ftdi_err) => {
-                    Some(ftdi_err)
-                },
-                MercuryError::Timeout => {
-                    None
-                }
+                MercuryError::SafeFtdi(ref ftdi_err) => Some(ftdi_err),
+                MercuryError::Timeout => None,
             }
         }
     }
@@ -82,7 +77,7 @@ mod mercury {
         }
     }
 
-    bitflags!{
+    bitflags! {
         pub struct DeviceSelect: u8 {
             // CSN0 low selects FLASH
             // CSN1 low selects FPGA
@@ -92,41 +87,36 @@ mod mercury {
         }
     }
 
-
     impl Mercury {
-        pub fn new() -> Mercury {
-            Mercury {
-                context : ftdi::Context::new().unwrap()
-            }
+        pub fn open() -> ftdi::Result<Mercury> {
+            let device = Device::from_vid_pid(Interface::Any, 0x0403, 0x6001)?;
+            device.set_baudrate(3_000_000)?;
+            Ok(Mercury { device })
         }
 
-        pub fn open(&mut self) -> ftdi::Result<()> {
-            self.context.open(0x0403, 0x6001)?;
-            self.context.set_baudrate(3_000_000)?;
-            Ok(())
-        }
-
-        pub fn program_mode(&mut self, enable : bool) -> ftdi::Result<()> {
+        pub fn program_mode(&mut self, enable: bool) -> ftdi::Result<()> {
             if enable {
-                self.context.set_bitmode(Pins::FT245_DIR_PROG.bits, MpsseMode::BITMODE_BITBANG)?;
+                self.device
+                    .set_bitmode(Pins::FT245_DIR_PROG.bits, BitMode::Bitbang)?;
             } else {
-                self.context.set_bitmode(Pins::FT245_DIR_IDLE.bits, MpsseMode::BITMODE_BITBANG)?;
+                self.device
+                    .set_bitmode(Pins::FT245_DIR_IDLE.bits, BitMode::Bitbang)?;
             }
             Ok(())
         }
 
-        pub fn spi_sel(&mut self, sel : DeviceSelect) -> ftdi::Result<()> {
-            self.context.write_data(slice::from_ref(&sel.bits))?;
+        pub fn spi_sel(&mut self, sel: DeviceSelect) -> ftdi::Result<()> {
+            self.device.write_data(slice::from_ref(&sel.bits))?;
             Ok(())
         }
 
         // If deslect should happen after calling this function, it needs to be done manually!
         // Flash expects CS to stay asserted between data out and data in (PC's point-of-view).
-        pub fn spi_out(&mut self, bytes : &[u8], sel : DeviceSelect) -> ftdi::Result<u32> {
-            let mut cnt : u32 = 0;
+        pub fn spi_out(&mut self, bytes: &[u8], sel: DeviceSelect) -> ftdi::Result<u32> {
+            let mut cnt: u32 = 0;
 
             for b in bytes {
-                let mut spi_word : [u8; 17] = [0; 17];
+                let mut spi_word: [u8; 17] = [0; 17];
                 let mut bitread = BitReader::new(slice::from_ref(&b));
                 for i in (0..16).step_by(2) {
                     let curr_bit = if bitread.read_bool().unwrap() {
@@ -142,7 +132,7 @@ mod mercury {
                 spi_word[16] = sel.bits;
 
                 // FIXME: Should "not all data was written" be considered an error?
-                self.context.write_data(&spi_word)?;
+                self.device.write_data(&spi_word)?;
                 cnt += 1;
             }
 
@@ -150,24 +140,24 @@ mod mercury {
         }
 
         // Expects that SCLK is low when entering this function (type 0 only).
-        pub fn spi_in(&mut self, bytes : &mut [u8], sel : DeviceSelect) -> ftdi::Result<u32> {
-            let mut cnt : u32 = 0;
+        pub fn spi_in(&mut self, bytes: &mut [u8], sel: DeviceSelect) -> ftdi::Result<u32> {
+            let mut cnt: u32 = 0;
 
             for b in bytes.iter_mut() {
                 let mut curr_byte = 0;
                 for i in (0..8).rev() {
-                    let clk_hi : u8 = Pins::SCLK.bits | sel.bits;
-                    let clk_lo : u8 = sel.bits;
-                    let pin_vals : u8;
+                    let clk_hi: u8 = Pins::SCLK.bits | sel.bits;
+                    let clk_lo: u8 = sel.bits;
+                    let pin_vals: u8;
 
-                    pin_vals = self.context.read_pins()?;
+                    pin_vals = self.device.read_pins()?;
 
                     if (Pins::MISO.bits & pin_vals) != 0 {
                         curr_byte |= 1 << i;
                     }
 
-                    self.context.write_data(slice::from_ref(&clk_hi))?;
-                    self.context.write_data(slice::from_ref(&clk_lo))?;
+                    self.device.write_data(slice::from_ref(&clk_hi))?;
+                    self.device.write_data(slice::from_ref(&clk_lo))?;
                 }
 
                 *b = curr_byte;
@@ -175,9 +165,9 @@ mod mercury {
             }
 
             let idle = DeviceSelect::IDLE.bits;
-            match self.context.write_data(slice::from_ref(&idle)) {
+            match self.device.write_data(slice::from_ref(&idle)) {
                 Ok(v) => v,
-                Err(e) => {return Err(e)}
+                Err(e) => return Err(e),
             };
 
             Ok(cnt)
@@ -185,7 +175,7 @@ mod mercury {
 
         pub fn flash_id(&mut self) -> ftdi::Result<u32> {
             let id_cmd = 0x9F;
-            let mut id_arr : [u8; 4] = [0; 4];
+            let mut id_arr: [u8; 4] = [0; 4];
 
             match self.spi_out(slice::from_ref(&id_cmd), DeviceSelect::FLASH) {
                 Ok(v) => v,
@@ -208,7 +198,7 @@ mod mercury {
             Ok(LittleEndian::read_u32(&id_arr))
         }
 
-        pub fn flash_write(&mut self, buf : &[u8; 264], page_addr : u32) -> MercuryResult<()> {
+        pub fn flash_write(&mut self, buf: &[u8; 264], page_addr: u32) -> MercuryResult<()> {
             let write_flash_buffer_cmd = [0x84, 0x00, 0x00, 0x00];
             let mut buf_to_flash_cmd = [0x88, 0x00, 0x00, 0x00];
 
@@ -245,16 +235,16 @@ mod mercury {
             Ok(())
         }
 
-        fn do_erase_cmd(&mut self, cmd : [u8; 4], timeout : u32) -> MercuryResult<()> {
+        fn do_erase_cmd(&mut self, cmd: [u8; 4], timeout: u32) -> MercuryResult<()> {
             self.spi_out(&cmd, DeviceSelect::FLASH)?;
             self.spi_sel(DeviceSelect::IDLE)?;
             self.flash_poll(timeout)?;
             Ok(())
         }
 
-        fn flash_poll(&mut self, timeout : u32) -> MercuryResult<()> {
-            let status_read : u8 = 0xD7;
-            let mut status_code : u8 = 0;
+        fn flash_poll(&mut self, timeout: u32) -> MercuryResult<()> {
+            let status_read: u8 = 0xD7;
+            let mut status_code: u8 = 0;
 
             for _a in 0..timeout {
                 self.spi_out(slice::from_ref(&status_read), DeviceSelect::FLASH)?;
@@ -271,7 +261,6 @@ mod mercury {
     }
 }
 
-
 use mercury::*;
 
 fn main() {
@@ -279,7 +268,8 @@ fn main() {
 
     {
         let mut parser = ArgumentParser::new();
-        parser.refer(&mut bitstream_file)
+        parser
+            .refer(&mut bitstream_file)
             .add_argument("bitstream_file", Store, "Path to bitstream file")
             .required();
         parser.parse_args_or_exit();
@@ -287,12 +277,13 @@ fn main() {
 
     let mut bfile = match File::open(&bitstream_file) {
         Ok(x) => x,
-        Err(_) => { println!("Error: File '{}' not found", bitstream_file); return; },
+        Err(_) => {
+            println!("Error: File '{}' not found", bitstream_file);
+            return;
+        }
     };
 
-    let mut merc = Mercury::new();
-
-    merc.open().unwrap();
+    let mut merc = Mercury::open().unwrap();
 
     merc.program_mode(true).unwrap();
 
@@ -300,9 +291,9 @@ fn main() {
 
     merc.flash_erase().unwrap();
 
-    let mut page_buf : [u8; 264] = [0; 264];
-    let mut last_page_written : u16 = 0;
-    let mut _last_page_size : u16 = 0;
+    let mut page_buf: [u8; 264] = [0; 264];
+    let mut last_page_written: u16 = 0;
+    let mut _last_page_size: u16 = 0;
     for page_num in 0..8192u16 {
         match bfile.read(&mut page_buf) {
             Ok(n) => {
@@ -314,7 +305,7 @@ fn main() {
                     merc.flash_write(&page_buf, u32::from(page_num)).unwrap();
                     last_page_written = page_num;
                 }
-            },
+            }
             Err(_) => {
                 println!("Unexpected I/O Error.");
                 std::process::exit(-1);
@@ -327,12 +318,13 @@ fn main() {
             // If this was actually end of file, everything's fine.
             if n == 0 {
                 // TODO: Zero-pad page_buf by 264 - last_page_size
-                merc.flash_write(&page_buf, u32::from(last_page_written + 1)).unwrap();
+                merc.flash_write(&page_buf, u32::from(last_page_written + 1))
+                    .unwrap();
             } else {
                 println!("Expected End of File- file is too large to write.");
                 std::process::exit(-2);
             }
-        },
+        }
         Err(_) => {
             println!("Unexpected I/O Error.");
             std::process::exit(-3);
