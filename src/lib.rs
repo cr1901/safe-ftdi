@@ -1,5 +1,6 @@
 extern crate libftdi1_sys as ftdic;
 
+pub use ftdic::ftdi_eeprom_value;
 use std::ffi::{CStr, CString};
 use std::marker::PhantomData;
 use std::os::raw;
@@ -483,6 +484,15 @@ impl Device {
             description,
             serial,
         })
+    }
+
+    pub fn set_eeprom_value(&mut self, value_name: ftdi_eeprom_value, value: i32) -> Result<u32> {
+        let rc = unsafe {
+            ftdic::ftdi_set_eeprom_value(self.context.get_ftdi_context(), value_name, value)
+        };
+        self.context.check_ftdi_error(rc)?;
+        self.eeprom_read = false;
+        Ok(rc as u32)
     }
 
     /// Close device
